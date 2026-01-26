@@ -964,7 +964,7 @@ class Model(ModelSettings):
 
             os.environ[openai_api_key] = token
 
-    def send_completion(self, messages, functions, stream, temperature=None):
+    def send_completion(self, messages, functions, stream, temperature=None, llm_controlled_tools=False):
         if os.environ.get("ATLAS_SANITY_CHECK_TURNS"):
             sanity_check_messages(messages)
 
@@ -986,9 +986,27 @@ class Model(ModelSettings):
             kwargs["temperature"] = temperature
 
         if functions is not None:
-            function = functions[0]
-            kwargs["tools"] = [dict(type="function", function=function)]
-            kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+            if llm_controlled_tools:
+                # LLM-controlled mode: provide all tools, let LLM choose
+                if isinstance(functions, list):
+                    # Already a list of function definitions
+                    kwargs["tools"] = functions
+                else:
+                    # Single function or list of functions
+                    if isinstance(functions[0], dict) and "type" in functions[0]:
+                        # Already formatted as tool definitions
+                        kwargs["tools"] = functions
+                    else:
+                        # Convert function definitions to tool format
+                        kwargs["tools"] = [
+                            dict(type="function", function=func) for func in functions
+                        ]
+                # Don't set tool_choice - let LLM decide
+            else:
+                # Deterministic mode: force specific function call
+                function = functions[0]
+                kwargs["tools"] = [dict(type="function", function=function)]
+                kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
         if self.extra_params:
             kwargs.update(self.extra_params)
         if self.is_ollama() and "num_ctx" not in kwargs:
